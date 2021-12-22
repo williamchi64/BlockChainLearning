@@ -6,6 +6,12 @@
 //expose module
 pub use pallet::*;
 
+// import mock/tests with test config
+#[cfg(test)]
+mod mock;
+#[cfg(test)]
+mod tests;
+
 // use pallect macro
 #[frame_support::pallet]
 // import dependencies
@@ -38,19 +44,21 @@ pub mod pallet {
     #[pallet::getter(fn proofs)]
     // type = StorageMap
     pub type Proofs<T: Config> = StorageMap<
-    _,
-    // encryption
-    Blake2_128Concat,
-    // key(u8 hash)
-    Vec<u8>,
-    // value(tuple both come from system)
-    (T::AccountId, T::BlockNumber)
+        _,
+        // encryption
+        Blake2_128Concat,
+        // key(u8 hash)
+        Vec<u8>,
+        // value(tuple both come from system)
+        (T::AccountId, T::BlockNumber)
     >;
 
     // define event enum type
     #[pallet::event]
+	/* out of version
     // convert AccountId to "AccountId" for front-end
-    #[pallet::metadata(T::AccountId = "AccountId")]
+    // #[pallet::metadata(T::AccountId = "AccountId")]
+	*/
     // event activate method deposit_event
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
@@ -123,10 +131,10 @@ pub mod pallet {
 
         #[pallet::weight(0)]
         // create transaction
-        pub fn transaction_claim(
+        pub fn transfer_claim(
             origin: OriginFor<T>,
             claim: Vec<u8>,
-            other: T::AccountId
+            dest: T::AccountId
         ) -> DispatchResultWithPostInfo {
             // check sender valid
             let sender = ensure_signed(origin)?;
@@ -135,17 +143,19 @@ pub mod pallet {
             // check if sender own the claim
             ensure!(owner == sender, Error::<T>::NotClaimOwner);
             // check if sender is same to destination
-            ensure!(other != sender, Error::<T>::NotDestination);
+            ensure!(dest != sender, Error::<T>::NotDestination);
+            /* Redundant logic, insert contain remove logic
             //flipping two steps below causes claim-lose for some reason
-            // remove the claim
-            Proofs::<T>::remove(&claim);
+            // remove the claim 
+            // Proofs::<T>::remove(&claim);
+             */
             // store data as StorageMap
             Proofs::<T>::insert(
                 &claim, 
-                (other.clone(), frame_system::Pallet::<T>::block_number())
+                (dest.clone(), frame_system::Pallet::<T>::block_number())
             );
             // event active
-            Self::deposit_event(Event::ClaimTransaction(sender, claim, other));
+            Self::deposit_event(Event::ClaimTransaction(sender, claim, dest));
             // result
             Ok(().into())
         }
