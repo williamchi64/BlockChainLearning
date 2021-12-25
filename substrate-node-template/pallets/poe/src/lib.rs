@@ -18,7 +18,7 @@ mod tests;
 pub mod pallet {
     use frame_support::{
         dispatch::DispatchResultWithPostInfo,
-        pallet_prelude::*
+        pallet_prelude::*, traits::Get
     };
     use frame_system::pallet_prelude::*;
     // new add dependency
@@ -30,6 +30,9 @@ pub mod pallet {
     pub trait Config: frame_system::Config {
         // inherit from frame_system::Config::Event
         type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+        // implement with method get to get constant
+        #[pallet::constant]
+        type MaxVecLen: Get<u32>;
     }
 
     // pallet::pallet macro define
@@ -73,7 +76,8 @@ pub mod pallet {
         ProofAlreadyExist,
         ClaimNotExist,
         NotClaimOwner,
-        NotDestination
+        NotDestination,
+        ClaimSizeOutOfBound
     }
 
     // functions active in specific period
@@ -94,6 +98,7 @@ pub mod pallet {
             claim: Vec<u8>
             // result include weight
         ) -> DispatchResultWithPostInfo {
+            ensure!((claim.len() as u32) <= T::MaxVecLen::get(), Error::<T>::ClaimSizeOutOfBound);
             // calibrate sender
             let sender = ensure_signed(origin)?;
             // check if claim exist
