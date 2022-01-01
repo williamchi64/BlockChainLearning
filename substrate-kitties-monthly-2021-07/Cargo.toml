@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    'node',
+    # introduce kitteis in workspace
+    'pallets/*',
+    'runtime',
+]
+[profile.release]
+panic = 'unwind'
