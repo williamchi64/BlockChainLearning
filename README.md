@@ -7,6 +7,6 @@
 <br>
 @screenshot: homework 2
 <br>
-![](https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo/advance/homework-2/runtime.png)
+https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo/advance/homework-2/runtime.png
 <br>
-**more [screenshots](https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo)
+**more screenshots https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo

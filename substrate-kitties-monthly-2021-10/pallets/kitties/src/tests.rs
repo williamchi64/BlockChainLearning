@@ -12,6 +12,8 @@ fn create_kitty_works() {
 }
 /***    There are some unknow problem here. 
  *      Polkadot.js Apps UI can successfully catch this Error, but unit test show error in photo(in file "homework-2/unknow problem")
+ *      problem is solved by adding #[transaction] on affected method.
+ *      cause by reserve currency activity
 */ 
 #[test]
 fn create_kitty_failed_when_kitties_count_is_out_of_limit() {
