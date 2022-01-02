@@ -10,6 +10,9 @@ fn create_kitty_works() {
         assert_eq!(KittiesTest::owner(0), 1);
     });
 }
+/***    There are some unknow problem here. 
+ *      Polkadot.js Apps UI can successfully catch this Error, but unit test show error in photo(in file "homework-2/unknow problem")
+*/ 
 #[test]
 fn create_kitty_failed_when_kitties_count_is_out_of_limit() {
     new_test_ext().execute_with( || {
@@ -19,7 +22,7 @@ fn create_kitty_failed_when_kitties_count_is_out_of_limit() {
         assert_ok!(KittiesTest::transfer(Origin::signed(2), 1, 0));
         assert_noop!(
             KittiesTest::create_kitty(Origin::signed(1)), 
-            Error::<Test>::InvalidKittyIndex
+            Error::<Test>::ExceedMaxKittyOwned
         );
     });
 }
