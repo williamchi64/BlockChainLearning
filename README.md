@@ -5,7 +5,7 @@
         @done: up to homework 2 <br>
 <br>
 <br>
-@screenshot: homework 2
+@screenshot: homework 2 (in monthly-2021-10)
 <br>
 https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo/advance/homework-2/runtime.png
 <br>
