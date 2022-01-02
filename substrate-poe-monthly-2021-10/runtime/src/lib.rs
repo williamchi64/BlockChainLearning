@@ -141,6 +141,9 @@ parameter_types! {
 	pub BlockLength: frame_system::limits::BlockLength = frame_system::limits::BlockLength
 		::max_with_normal_ratio(5 * 1024 * 1024, NORMAL_DISPATCH_RATIO);
 	pub const SS58Prefix: u8 = 42;
+	// One can own at most 9,999 Kitties
+	pub const MaxKittyOwned: u32 = 3;
+	pub const KittyReservationFee: u128 = 1000;
 }
 
 // Configure FRAME pallets to include in runtime.
@@ -285,6 +288,8 @@ impl pallet_kitties::Config for Runtime {
 	type Event = Event;
 	type Randomness = RandomnessCollectiveFlip;
 	type Currency = Balances;
+	type MaxKittyOwned = MaxKittyOwned;
+	type ReservationFee = KittyReservationFee;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -305,7 +310,7 @@ construct_runtime!(
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template::{Pallet, Call, Storage, Event<T>},
 		// Include the custom logic from the pallet-kitties in the runtime.
-		KittiesModule: pallet_kitties::{Pallet, Call, Storage, Event<T>},
+		Kitties: pallet_kitties::{Pallet, Call, Config<T>, Storage, Event<T>},
 	}
 );
 
