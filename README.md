@@ -5,8 +5,17 @@
         @done: up to homework 2 <br>
 <br>
 <br>
-@screenshot: homework 2 (in monthly-2021-10)
+ # homework 3 (in frontend)
 <br>
-https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo/advance/homework-2/runtime.png
+@screenshot: 
 <br>
-**more screenshots https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo
+ ### create kitty
+![create kitties]((https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo/advance/homework-3/create-kitty.png)
+<br>
+ ### transfer kitty
+![create kitties]((https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo/advance/homework-3/transfer-kitty.png)
+<br>
+ ### breed kitty
+![create kitties]((https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo/advance/homework-3/create-kitty-by-breed.png)
+<br>
+* [screenshots](https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo/advance/homework-3)
