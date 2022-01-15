@@ -364,15 +364,15 @@ pub mod pallet {
 				},
 				match split.next() {
 					Some(v) => {
-						match ("0.".to_string() + &v.to_string()).parse::<f64>() {
-							Ok(v) => Permill::from_float(v),
+						match v.parse::<u32>() {
+							Ok(v) => Permill::from_parts(v),
 							Err(e) => {
 								log::info!("Invalid Permill str: {}", e);
-								Permill::from_float(0.0)
+								Permill::zero()
 							},
 						}
 					},
-					None => Permill::from_float(0.0),
+					None => Permill::zero(),
 				},	
 			)
 		}
@@ -414,7 +414,13 @@ pub mod pallet {
 		}
 
 		fn fetch_n_parse_price(http_addr: &str) -> Result<PriceInfo, Error<T>> {
-			let resp_str = Self::http_to_resp(http_addr)?;
+			let resp_bytes = Self::fetch_from_remote(&http_addr).map_err(|e| {
+				log::error!("fetch_from_remote error: {:?}", e);
+				<Error<T>>::HttpFetchingError
+			})?;
+			let resp_str = str::from_utf8(&resp_bytes).map_err(|_| <Error<T>>::HttpFetchingError)?;
+			// Print out our fetched JSON string
+			log::info!("{}", resp_str);
 			// Deserializing JSON to struct, thanks to `serde` and `serde_derive`
 			let json_info = serde_json::from_str(&resp_str).map_err(|_| <Error<T>>::HttpFetchingError)?;
 			Ok(json_info)
@@ -470,23 +476,16 @@ pub mod pallet {
 
 		/// Fetch from remote and deserialize the JSON to a struct
 		fn fetch_n_parse(http_addr: &str) -> Result<GithubInfo, Error<T>> {
-			let resp_str = Self::http_to_resp(http_addr)?;
-			// Deserializing JSON to struct, thanks to `serde` and `serde_derive`
-			let json_info = serde_json::from_str(&resp_str).map_err(|_| <Error<T>>::HttpFetchingError)?;
-			Ok(json_info)
-		}
-
-		// reuse http trasfer to response process
-		fn http_to_resp(http_addr: &str) -> Result<String, Error<T>> {
 			let resp_bytes = Self::fetch_from_remote(&http_addr).map_err(|e| {
 				log::error!("fetch_from_remote error: {:?}", e);
 				<Error<T>>::HttpFetchingError
 			})?;
-
 			let resp_str = str::from_utf8(&resp_bytes).map_err(|_| <Error<T>>::HttpFetchingError)?;
 			// Print out our fetched JSON string
 			log::info!("{}", resp_str);
-			Ok(String::from(resp_str))
+			// Deserializing JSON to struct, thanks to `serde` and `serde_derive`
+			let json_info = serde_json::from_str(&resp_str).map_err(|_| <Error<T>>::HttpFetchingError)?;
+			Ok(json_info)
 		}
 
 		/// This function uses the `offchain::http` API to query the remote github information,
