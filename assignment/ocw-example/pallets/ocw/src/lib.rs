@@ -97,6 +97,19 @@ pub mod pallet {
 		}
 	}
 
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug)]
+	pub struct PricePayload<Public> {
+		integer: u64,
+		decimal: Permill,
+		public: Public,
+	}
+
+	impl<T: SigningTypes> SignedPayload<T> for PricePayload<T::Public> {
+		fn public(&self) -> T::Public {
+			self.public.clone()
+		}
+	}
+
 	// ref: https://serde.rs/container-attrs.html#crate
 	#[derive(Deserialize, Encode, Decode, Default)]
 	struct GithubInfo {
@@ -120,8 +133,8 @@ pub mod pallet {
 
 	#[derive(Deserialize, Encode, Decode, Default)]
 	struct Data {
-		#[serde(deserialize_with = "de_string_to_bytes")]
-		priceUsd: Vec<u8>,
+		#[serde(deserialize_with = "de_string_to_bytes", rename="priceUsd")]
+		price_usd: Vec<u8>,
 	}
 
 	pub fn de_string_to_bytes<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
@@ -153,7 +166,7 @@ pub mod pallet {
 			write!(
 				f,
 				"{{ priceUsd: {} }}",
-				str::from_utf8(&self.data.priceUsd).map_err(|_| fmt::Error)?,
+				str::from_utf8(&self.data.price_usd).map_err(|_| fmt::Error)?,
 			)
 		}
 	}
@@ -188,6 +201,7 @@ pub mod pallet {
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
 		NewNumber(Option<T::AccountId>, u64),
+		NewPrice(Option<T::AccountId>, u64, Permill)
 	}
 
 	// Errors inform users that something went wrong.
@@ -205,6 +219,9 @@ pub mod pallet {
 
 		// Error returned when making unsigned transactions with signed payloads in off-chain worker
 		OffchainUnsignedTxSignedPayloadError,
+
+		// Specific error for price fetch
+		PriceOffchainUnsignedTxSignedPayloadError,
 
 		// Error returned when fetching github info
 		HttpFetchingError,
@@ -273,6 +290,12 @@ pub mod pallet {
 					}
 					valid_tx(b"submit_number_unsigned_with_signed_payload".to_vec())
 				},
+				Call::submit_price_unsigned_with_signed_payload(ref price_payload, ref signature) => {
+					if !SignedPayload::<T>::verify::<T::AuthorityId>(price_payload, signature.clone()) {
+						return InvalidTransaction::BadProof.into();
+					}
+					valid_tx(b"submit_price_unsigned_with_signed_payload".to_vec())
+				},
 				_ => InvalidTransaction::Call.into(),
 			}
 		}
@@ -314,6 +337,21 @@ pub mod pallet {
 			Self::deposit_event(Event::NewNumber(None, number));
 			Ok(())
 		}
+
+		#[pallet::weight(10000)]
+		pub fn submit_price_unsigned_with_signed_payload(origin: OriginFor<T>, price_payload: PricePayload<T::Public>,
+			_signature: T::Signature) -> DispatchResult
+		{
+			let _ = ensure_none(origin)?;
+			// we don't need to verify the signature here because it has been verified in
+			//   `validate_unsigned` function when sending out the unsigned tx.
+			let PricePayload { integer, decimal, public } = price_payload;
+			log::info!("submit_price_unsigned_with_signed_payload: ({}, {:?}, {:?})", integer, decimal, public);
+			Self::append_or_replace_price((integer, decimal));
+
+			Self::deposit_event(Event::NewPrice(None, integer, decimal));
+			Ok(())
+		}
 	}
 
 	impl<T: Config> Pallet<T> {
@@ -339,95 +377,43 @@ pub mod pallet {
 			});
 		}
 
-		fn price_info_to_price(price_info: PriceInfo) -> (u64, Permill) {
-			let vec_u8 = price_info.data.priceUsd;
-			let price_str = match str::from_utf8(&vec_u8) {
-				Ok(v) => v,
-				Err(e) => {
-					log::info!("Invalid UTF-8 sequence: {}", e);
-					"0.0"
-				},
-			};
-			let mut split = price_str.split(".");
-			(
-				match split.next() {
-					Some(v) => {
-						match v.parse::<u64>() {
-							Ok(v_u64) => v_u64,
-							Err(e) => {
-								log::info!("Invalid u64 str: {}", e);
-								0
-							},
-						}
-					},
-					None => 0,
-				},
-				match split.next() {
-					Some(v) => {
-						if let Ok(v_u32) = v[..10].parse::<u32>() {
-							Permill::from_parts(v_u32)
-						} else {
-							match v[..9].parse::<u32>() {
-								Ok(v_u32) => Permill::from_parts(v_u32),
-								Err(e) => {
-									log::info!("Invalid Permill str: {}", e);
-									Permill::zero()
-								}
-							}
-						}
-					},
-					None => Permill::zero(),
-				},	
-			)
-		}
+		/// This function uses the `offchain::http` API to query the remote github information,
+		///   and returns the JSON response as vector of bytes.
+		// let fetch from remote reuse by different http request
+		fn fetch_from_remote(http_addr: &str) -> Result<Vec<u8>, Error<T>> {
+			log::info!("sending request to: {}", http_addr);
 
-		fn fetch_price_info() -> Result<(), Error<T>> {
-			// TODO: 这是你们的功课
+			// Initiate an external HTTP GET request. This is using high-level wrappers from `sp_runtime`.
+			let request = rt_offchain::http::Request::get(http_addr);
 
-			// 利用 offchain worker 取出 DOT 当前对 USD 的价格，并把写到一个 Vec 的存储里，
-			// 你们自己选一种方法提交回链上，并在代码注释为什么用这种方法提交回链上最好。只保留当前最近的 10 个价格，
-			// 其他价格可丢弃 （就是 Vec 的长度长到 10 后，这时再插入一个值时，要先丢弃最早的那个值）。
+			// Keeping the offchain worker execution time reasonable, so limiting the call to be within 3s.
+			let timeout = sp_io::offchain::timestamp()
+			.add(rt_offchain::Duration::from_millis(FETCH_TIMEOUT_PERIOD));
 
-			// 取得的价格 parse 完后，放在以下存儲：
-			// pub type Prices<T> = StorageValue<_, VecDeque<(u64, Permill)>, ValueQuery>
+			// For github API request, we also need to specify `user-agent` in http request header.
+			//   See: https://developer.github.com/v3/#user-agent-required
+			let pending = request
+			.add_header("User-Agent", HTTP_HEADER_USER_AGENT)
+				.deadline(timeout) // Setting the timeout time
+				.send() // Sending the request out by the host
+				.map_err(|_| <Error<T>>::HttpFetchingError)?;
 
-			// 这个 http 请求可得到当前 DOT 价格：
-			// [https://api.coincap.io/v2/assets/polkadot](https://api.coincap.io/v2/assets/polkadot)。
+			// By default, the http request is async from the runtime perspective. So we are asking the
+			//   runtime to wait here.
+			// The returning value here is a `Result` of `Result`, so we are unwrapping it twice by two `?`
+			//   ref: https://substrate.dev/rustdocs/v2.0.0/sp_runtime/offchain/http/struct.PendingRequest.html#method.try_wait
+			let response = pending
+			.try_wait(timeout)
+			.map_err(|_| <Error<T>>::HttpFetchingError)?
+			.map_err(|_| <Error<T>>::HttpFetchingError)?;
 
-			// local storage reference key
-			let s_info = StorageValueRef::persistent(b"offchain-pallet-ocw::price-info");
-			if let Ok(Some(price_info)) = s_info.get::<PriceInfo>() {
-				// price_info has already been fetched. Return early.
-				log::info!("cached price-info: {:?}", price_info);
-				return Ok(());
+			if response.code != 200 {
+				log::error!("Unexpected http request status code: {}", response.code);
+				return Err(<Error<T>>::HttpFetchingError);
 			}
-			let mut lock = StorageLock::<BlockAndTime<Self>>::with_block_and_time_deadline(
-				b"offchain-pallet-ocw::lock", LOCK_BLOCK_EXPIRATION,
-				rt_offchain::Duration::from_millis(LOCK_TIMEOUT_EXPIRATION)
-			);
-			if let Ok(_guard) = lock.try_lock() {
-				match Self::fetch_n_parse_price(HTTP_REMOTE_REQUEST_PRICE) {
-					Ok(price_info) => { 
-						s_info.set(&price_info);
-						Self::append_or_replace_price(Self::price_info_to_price(price_info));
-					}
-					Err(err) => { return Err(err); }
-				}
-			}
-			Ok(())
-		}
 
-		fn fetch_n_parse_price(http_addr: &str) -> Result<PriceInfo, Error<T>> {
-			let resp_bytes = Self::fetch_from_remote(&http_addr).map_err(|e| {
-				log::error!("fetch_from_remote error: {:?}", e);
-				<Error<T>>::HttpFetchingError
-			})?;
-			let resp_str = str::from_utf8(&resp_bytes).map_err(|_| <Error<T>>::HttpFetchingError)?;
-			// Print out our fetched JSON string
-			log::info!("{}", resp_str);
-			// Deserializing JSON to struct, thanks to `serde` and `serde_derive`
-			let json_info = serde_json::from_str(&resp_str).map_err(|_| <Error<T>>::HttpFetchingError)?;
-			Ok(json_info)
+			// Next we fully read the response body and collect it to a vector of bytes.
+			Ok(response.body().collect::<Vec<u8>>())
 		}
 
 		/// Check if we have fetched github info before. If yes, we can use the cached version
@@ -492,43 +478,71 @@ pub mod pallet {
 			Ok(json_info)
 		}
 
-		/// This function uses the `offchain::http` API to query the remote github information,
-		///   and returns the JSON response as vector of bytes.
-		// let fetch from remote reuse by different http request
-		fn fetch_from_remote(http_addr: &str) -> Result<Vec<u8>, Error<T>> {
-			log::info!("sending request to: {}", http_addr);
+		fn fetch_n_parse_price(http_addr: &str) -> Result<PriceInfo, Error<T>> {
+			let resp_bytes = Self::fetch_from_remote(&http_addr).map_err(|e| {
+				log::error!("fetch_from_remote error: {:?}", e);
+				<Error<T>>::HttpFetchingError
+			})?;
+			let resp_str = str::from_utf8(&resp_bytes).map_err(|_| <Error<T>>::HttpFetchingError)?;
+			// Print out our fetched JSON string
+			log::info!("{}", resp_str);
+			// Deserializing JSON to struct, thanks to `serde` and `serde_derive`
+			let json_info = serde_json::from_str(&resp_str).map_err(|_| <Error<T>>::HttpFetchingError)?;
+			Ok(json_info)
+		}
 
-			// Initiate an external HTTP GET request. This is using high-level wrappers from `sp_runtime`.
-			let request = rt_offchain::http::Request::get(http_addr);
+		fn fetch_price_info() -> Result<(), Error<T>> {
+			// TODO: 这是你们的功课
 
-			// Keeping the offchain worker execution time reasonable, so limiting the call to be within 3s.
-			let timeout = sp_io::offchain::timestamp()
-			.add(rt_offchain::Duration::from_millis(FETCH_TIMEOUT_PERIOD));
+			// 利用 offchain worker 取出 DOT 当前对 USD 的价格，并把写到一个 Vec 的存储里，
+			// 你们自己选一种方法提交回链上，并在代码注释为什么用这种方法提交回链上最好。只保留当前最近的 10 个价格，
+			// 其他价格可丢弃 （就是 Vec 的长度长到 10 后，这时再插入一个值时，要先丢弃最早的那个值）。
 
-			// For github API request, we also need to specify `user-agent` in http request header.
-			//   See: https://developer.github.com/v3/#user-agent-required
-			let pending = request
-			.add_header("User-Agent", HTTP_HEADER_USER_AGENT)
-				.deadline(timeout) // Setting the timeout time
-				.send() // Sending the request out by the host
-				.map_err(|_| <Error<T>>::HttpFetchingError)?;
+			// 取得的价格 parse 完后，放在以下存儲：
+			// pub type Prices<T> = StorageValue<_, VecDeque<(u64, Permill)>, ValueQuery>
 
-			// By default, the http request is async from the runtime perspective. So we are asking the
-			//   runtime to wait here.
-			// The returning value here is a `Result` of `Result`, so we are unwrapping it twice by two `?`
-			//   ref: https://substrate.dev/rustdocs/v2.0.0/sp_runtime/offchain/http/struct.PendingRequest.html#method.try_wait
-			let response = pending
-			.try_wait(timeout)
-			.map_err(|_| <Error<T>>::HttpFetchingError)?
-			.map_err(|_| <Error<T>>::HttpFetchingError)?;
+			// 这个 http 请求可得到当前 DOT 价格：
+			// [https://api.coincap.io/v2/assets/polkadot](https://api.coincap.io/v2/assets/polkadot)。
 
-			if response.code != 200 {
-				log::error!("Unexpected http request status code: {}", response.code);
-				return Err(<Error<T>>::HttpFetchingError);
+			// local storage reference key
+			let s_info = StorageValueRef::persistent(b"offchain-demo::price-info");
+			let mut lock = StorageLock::<BlockAndTime<Self>>::with_block_and_time_deadline(
+				b"offchain-demo::lock", LOCK_BLOCK_EXPIRATION,
+				rt_offchain::Duration::from_millis(LOCK_TIMEOUT_EXPIRATION)
+			);
+			let mut integer = 0;
+			let mut decimal = Permill::zero();
+			if let Ok(_guard) = lock.try_lock() {
+				match Self::fetch_n_parse_price(HTTP_REMOTE_REQUEST_PRICE) {
+					Ok(price_info) => { 
+						s_info.set(&price_info);
+						(integer, decimal) = Self::price_info_to_price(price_info);
+					}
+					Err(err) => { 
+						return Err(err); 
+					}
+				}
+			}
+			// Retrieve the signer to sign the payload
+			let signer = Signer::<T, T::AuthorityId>::any_account();
+			// `send_unsigned_transaction` is returning a type of `Option<(Account<T>, Result<(), ()>)>`.
+			//   Similar to `send_signed_transaction`, they account for:
+			//   - `None`: no account is available for sending transaction
+			//   - `Some((account, Ok(())))`: transaction is successfully sent
+			//   - `Some((account, Err(())))`: error occured when sending the transaction
+			if let Some((_, res)) = signer.send_unsigned_transaction(
+				|acct| PricePayload { integer, decimal, public: acct.public.clone() },
+				Call::submit_price_unsigned_with_signed_payload
+			) {
+				return res.map_err(|_| {
+					log::error!("Failed in fetching price by offchain_unsigned_tx_signed_payload");
+					<Error<T>>::PriceOffchainUnsignedTxSignedPayloadError
+				});
 			}
 
-			// Next we fully read the response body and collect it to a vector of bytes.
-			Ok(response.body().collect::<Vec<u8>>())
+			// The case of `None`: no account is available for sending
+			log::error!("No local account available");
+			Err(<Error<T>>::NoLocalAcctForSigning)
 		}
 
 		fn offchain_signed_tx(block_number: T::BlockNumber) -> Result<(), Error<T>> {
@@ -601,6 +615,48 @@ pub mod pallet {
 			// The case of `None`: no account is available for sending
 			log::error!("No local account available");
 			Err(<Error<T>>::NoLocalAcctForSigning)
+		}
+
+		fn price_info_to_price(price_info: PriceInfo) -> (u64, Permill) {
+			let vec_u8 = price_info.data.price_usd;
+			let price_str = match str::from_utf8(&vec_u8) {
+				Ok(v) => v,
+				Err(e) => {
+					log::info!("Invalid UTF-8 sequence: {}", e);
+					"0.0"
+				},
+			};
+			let mut split = price_str.split(".");
+			(
+				match split.next() {
+					Some(v) => {
+						match v.parse::<u64>() {
+							Ok(v_u64) => v_u64,
+							Err(e) => {
+								log::info!("Invalid u64 str: {}", e);
+								0
+							},
+						}
+					},
+					None => 0,
+				},
+				match split.next() {
+					Some(v) => {
+						if let Ok(v_u32) = v[..10].parse::<u32>() {
+							Permill::from_parts(v_u32)
+						} else {
+							match v[..9].parse::<u32>() {
+								Ok(v_u32) => Permill::from_parts(v_u32),
+								Err(e) => {
+									log::info!("Invalid Permill str: {}", e);
+									Permill::zero()
+								}
+							}
+						}
+					},
+					None => Permill::zero(),
+				},	
+			)
 		}
 	}
 
