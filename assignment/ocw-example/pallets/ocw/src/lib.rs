@@ -16,7 +16,7 @@ pub mod pallet {
 		},
 	};
 	use sp_core::{crypto::KeyTypeId};
-	use sp_arithmetic::per_things::Permill;
+	use sp_arithmetic::per_things::{Permill, PerThing};
 	use sp_runtime::{
 		offchain as rt_offchain,
 		traits::{
@@ -121,7 +121,7 @@ pub mod pallet {
 	#[derive(Deserialize, Encode, Decode, Default)]
 	struct Data {
 		#[serde(deserialize_with = "de_string_to_bytes")]
-		vwap24Hr: Vec<u8>,
+		priceUsd: Vec<u8>,
 	}
 
 	pub fn de_string_to_bytes<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
@@ -152,8 +152,8 @@ pub mod pallet {
 		fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 			write!(
 				f,
-				"{{ vwap24Hr: {} }}",
-				str::from_utf8(&self.data.vwap24Hr).map_err(|_| fmt::Error)?,
+				"{{ priceUsd: {} }}",
+				str::from_utf8(&self.data.priceUsd).map_err(|_| fmt::Error)?,
 			)
 		}
 	}
@@ -340,7 +340,7 @@ pub mod pallet {
 		}
 
 		fn price_info_to_price(price_info: PriceInfo) -> (u64, Permill) {
-			let vec_u8 = price_info.data.vwap24Hr;
+			let vec_u8 = price_info.data.priceUsd;
 			let price_str = match str::from_utf8(&vec_u8) {
 				Ok(v) => v,
 				Err(e) => {
@@ -364,8 +364,16 @@ pub mod pallet {
 				},
 				match split.next() {
 					Some(v) => {
-						match v.parse::<u32>() {
-							Ok(v) => Permill::from_parts(v),
+						match v.parse::<<Permill as PerThing>::Upper>() {
+							Ok(v) => Permill::from_parts(
+								match v.try_into() {
+									Ok(v) => v,
+									Err(e) => {
+										log::info!("Invalid u64 to u32: {}", e);
+										0
+									},
+								}
+							),
 							Err(e) => {
 								log::info!("Invalid Permill str: {}", e);
 								Permill::zero()
