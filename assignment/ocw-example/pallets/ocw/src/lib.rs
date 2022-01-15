@@ -16,7 +16,7 @@ pub mod pallet {
 		},
 	};
 	use sp_core::{crypto::KeyTypeId};
-	use sp_arithmetic::per_things::{Permill, PerThing};
+	use sp_arithmetic::per_things::Permill;
 	use sp_runtime::{
 		offchain as rt_offchain,
 		traits::{
@@ -353,7 +353,7 @@ pub mod pallet {
 				match split.next() {
 					Some(v) => {
 						match v.parse::<u64>() {
-							Ok(v) => v,
+							Ok(v_u64) => v_u64,
 							Err(e) => {
 								log::info!("Invalid u64 str: {}", e);
 								0
@@ -364,20 +364,16 @@ pub mod pallet {
 				},
 				match split.next() {
 					Some(v) => {
-						match v.parse::<<Permill as PerThing>::Upper>() {
-							Ok(v) => Permill::from_parts(
-								match v.try_into() {
-									Ok(v) => v,
-									Err(e) => {
-										log::info!("Invalid u64 to u32: {}", e);
-										0
-									},
+						if let Ok(v_u32) = v[..10].parse::<u32>() {
+							Permill::from_parts(v_u32)
+						} else {
+							match v[..9].parse::<u32>() {
+								Ok(v_u32) => Permill::from_parts(v_u32),
+								Err(e) => {
+									log::info!("Invalid Permill str: {}", e);
+									Permill::zero()
 								}
-							),
-							Err(e) => {
-								log::info!("Invalid Permill str: {}", e);
-								Permill::zero()
-							},
+							}
 						}
 					},
 					None => Permill::zero(),
