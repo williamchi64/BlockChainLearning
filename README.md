@@ -2,14 +2,15 @@
         @language: rust
         @use: substrate v4.0
         @purpose: this repository was made for oneblock+ substrate blockchain learning
-        @done: up to homework 3
+        @done: up to homework 4
 * [oneblock+](https://twitter.com/oneblock_)
- ### homework 3 (in substrate-kitties-frontend)
-* [screenshots](https://github.com/williamchi64/substrate-learning-Chi/raw/main/homework_photo/advance/homework-3)
- ##### create kitty
-![create kitties](./homework_photo/advance/homework-3/create-kitty.png)
- ##### transfer kitty
-![create kitties](./homework_photo/advance/homework-3/transfer-kitty.png)
- ##### breed kitty
-![create kitties](./homework_photo/advance/homework-3/create-kitty-by-breed.png)
+ ### homework 4 (in assignment)
+* [assignment](./assignment/ocw-example)
+* [screenshots](./homework_photo/advance/homework-4)
+ ##### price update event
+![create kitties](./homework_photo/advance/homework-4/price-event-update.png)
+ ##### 10 latest price
+![create kitties](./homework_photo/advance/homework-4/10-latest-price-on-chain-state.png)
+ ##### runtime
+![create kitties](./homework_photo/advance/homework-4/runtime-2.png)
 
