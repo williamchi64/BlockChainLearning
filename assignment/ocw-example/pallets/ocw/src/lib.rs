@@ -504,6 +504,13 @@ pub mod pallet {
 			// 这个 http 请求可得到当前 DOT 价格：
 			// [https://api.coincap.io/v2/assets/polkadot](https://api.coincap.io/v2/assets/polkadot)。
 
+			/// use submit_price_unsigned_with_signed_payload(不签名但具签名信息的交易)
+			/// Consider the situation that http request is not available, and manually updating price is necessary.
+			/// 如果有情况无法正常获取http请求，但需要手动上传价格
+			/// This update as maintenance of the chain should not spend any cost, 
+			/// 	and it is better to record the change by personal signature since this change is made by a person.
+			/// 因为是运营行为，不应该花费币，但人工操作为了保险需要签名
+
 			// local storage reference key
 			let s_info = StorageValueRef::persistent(b"offchain-demo::price-info");
 			let mut lock = StorageLock::<BlockAndTime<Self>>::with_block_and_time_deadline(
