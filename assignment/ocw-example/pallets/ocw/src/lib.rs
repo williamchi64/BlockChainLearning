@@ -642,15 +642,11 @@ pub mod pallet {
 				},
 				match split.next() {
 					Some(v) => {
-						if let Ok(v_u32) = v[..10].parse::<u32>() {
-							Permill::from_parts(v_u32)
-						} else {
-							match v[..9].parse::<u32>() {
-								Ok(v_u32) => Permill::from_parts(v_u32),
-								Err(e) => {
-									log::info!("Invalid Permill str: {}", e);
-									Permill::zero()
-								}
+						match v[..6].parse::<u32>() {
+							Ok(v_u32) => Permill::from_parts(v_u32),
+							Err(e) => {
+								log::info!("Invalid Permill str: {}", e);
+								Permill::zero()
 							}
 						}
 					},
